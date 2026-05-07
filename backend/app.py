@@ -8,7 +8,7 @@ from routes.chat import router as chat_router
 
 app = FastAPI()
 
-# CORS FIX (VERY IMPORTANT)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create DB tables
+# DB tables
 Base.metadata.create_all(bind=engine)
 
 # Routes

@@ -1,49 +1,99 @@
-import os
-import json
-from dotenv import load_dotenv
-import google.generativeai as genai
-
-load_dotenv()
-
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-
-SYSTEM_PROMPT = """
-Convert user input into STRICT JSON.
-
-INTENTS:
-- create_order
-- update_status
-- add_quality_note
-
-Return ONLY JSON.
-"""
-
+import re
 
 def parse_message(message: str):
 
-    try:
-        response = model.generate_content(SYSTEM_PROMPT + "\nUser: " + message)
+    msg = message.lower().strip()
 
-        text = response.text.strip()
+    # ================= DELETE ORDER =================
+    if "delete order" in msg or "remove order" in msg:
+        order_id = re.findall(r"\d+", message)
+        return {
+            "intent": "delete_order",
+            "order_id": int(order_id[0]) if order_id else None
+        }
 
-        # Clean Gemini formatting
-        text = text.replace("```json", "").replace("```", "").strip()
+    # ================= CHANGE STATUS (FIXED MAIN BUG) =================
+    if "change" in msg and "status" in msg:
 
-        print("RAW GEMINI:", text)
+        order_id = re.findall(r"\d+", message)
 
-        return json.loads(text)
+        status_map = {
+            "in review": "In Review",
+            "review": "In Review",
+            "accepted": "Accepted",
+            "completed": "Completed",
+            "complete": "Completed",
+            "received": "Received"
+        }
 
-    except Exception as e:
+        for key, value in status_map.items():
+            if key in msg:
+                return {
+                    "intent": "update_status",
+                    "order_id": int(order_id[0]) if order_id else None,
+                    "status": value
+                }
 
-        print("NLP ERROR:", e)
+    # ================= UPDATE STATUS (SHORT FORM) =================
+    if "order" in msg:
+
+        order_id = re.findall(r"\d+", message)
+
+        status_map = {
+            "in review": "In Review",
+            "review": "In Review",
+            "accepted": "Accepted",
+            "completed": "Completed"
+        }
+
+        for key, value in status_map.items():
+            if key in msg:
+                return {
+                    "intent": "update_status",
+                    "order_id": int(order_id[0]) if order_id else None,
+                    "status": value
+                }
+
+    # ================= GET STATUS =================
+    if "status" in msg and "order" in msg:
+        order_id = re.findall(r"\d+", message)
+        return {
+            "intent": "get_order_status",
+            "order_id": int(order_id[0]) if order_id else None
+        }
+
+    # ================= QUALITY =================
+    if "quality" in msg or "inspection" in msg:
+        order_id = re.findall(r"\d+", message)
+        return {
+            "intent": "add_quality_note",
+            "order_id": int(order_id[0]) if order_id else None,
+            "note": message
+        }
+
+    # ================= CREATE ORDER =================
+    if "need" in msg or "require" in msg or "by" in msg:
+
+        qty = re.findall(r"\d+", message)
+        quantity = int(qty[0]) if qty else 1
+
+        material = "Unknown"
+
+        if "copper" in msg:
+            material = "Copper"
+        elif "titanium" in msg:
+            material = "Titanium"
+        elif "steel" in msg:
+            material = "Steel"
+        elif "aluminum" in msg:
+            material = "Aluminum"
 
         return {
             "intent": "create_order",
-            "part_name": "Titanium Flange",
-            "material": "Titanium",
-            "quantity": 200,
-            "deadline": "July 20"
+            "part_name": message,
+            "material": material,
+            "quantity": quantity,
+            "deadline": ""
         }
+
+    return {"intent": "unknown"}

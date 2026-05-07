@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from nlp import parse_message
 from models import Order, QualityLog
+from schemas import ChatMessage
+from nlp import parse_message
 
 router = APIRouter()
 
@@ -17,69 +18,70 @@ def get_db():
 
 
 @router.post("/chat")
-def chat(message: dict, db: Session = Depends(get_db)):
+def chat(req: ChatMessage, db: Session = Depends(get_db)):
 
-    user_message = message["message"]
+    try:
+        user_message = req.message
 
-    result = parse_message(user_message)
+        result = parse_message(user_message)
 
-    intent = result.get("intent")
+        print("PARSED:", result)
 
-    # =====================
-    # CREATE ORDER
-    # =====================
-    if intent == "create_order":
+        intent = result.get("intent")
 
-        order = Order(
-            part_name=result.get("part_name"),
-            material=result.get("material"),
-            quantity=result.get("quantity"),
-            deadline=result.get("deadline"),
-            status="Received"
-        )
+        # ---------------- CREATE ORDER ----------------
+        if intent == "create_order":
 
-        db.add(order)
-        db.commit()
-        db.refresh(order)
+            order = Order(
+                part_name=result.get("part_name", "Unknown"),
+                material=result.get("material", "Unknown"),
+                quantity=result.get("quantity", 0),
+                deadline=result.get("deadline", ""),
+                status="Received"
+            )
 
-        return {
-            "reply": "Order created successfully",
-            "order_id": order.id
-        }
+            db.add(order)
+            db.commit()
+            db.refresh(order)
 
-    # =====================
-    # UPDATE STATUS
-    # =====================
-    elif intent == "update_status":
+            return {
+                "reply": "Order created successfully",
+                "order_id": order.id
+            }
 
-        order = db.query(Order).filter(Order.id == result.get("order_id")).first()
+        # ---------------- UPDATE STATUS ----------------
+        if intent == "update_status":
 
-        if order:
-            order.status = result.get("status")
+            order = db.query(Order).filter(Order.id == result.get("order_id")).first()
+
+            if order:
+                order.status = result.get("status")
+                db.commit()
+
+                return {"reply": "Status updated successfully"}
+
+            return {"reply": "Order not found"}
+
+        # ---------------- QUALITY NOTE ----------------
+        if intent == "add_quality_note":
+
+            note = QualityLog(
+                order_id=result.get("order_id"),
+                note=result.get("note")
+            )
+
+            db.add(note)
             db.commit()
 
-            return {"reply": "Status updated successfully"}
+            return {"reply": "Quality note added"}
 
-        return {"reply": "Order not found"}
+        return {"reply": "Could not understand request"}
 
-    # =====================
-    # QUALITY NOTE
-    # =====================
-    elif intent == "add_quality_note":
+    except Exception as e:
 
-        note = QualityLog(
-            order_id=result.get("order_id"),
-            note=result.get("note")
-        )
+        print("CHAT ERROR:", e)
 
-        db.add(note)
-        db.commit()
-
-        return {"reply": "Quality note added"}
-
-    # =====================
-    # UNKNOWN
-    # =====================
-    return {
-        "reply": "Sorry, I couldn't understand the request"
-    }
+        return {
+            "reply": "Backend error occurred",
+            "error": str(e)
+        }

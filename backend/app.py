@@ -2,10 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine
 from models import Base
+from routes.orders import router as order_router
 
 app = FastAPI()
 
+
 Base.metadata.create_all(bind=engine)
+app.include_router(order_router)
 
 
 

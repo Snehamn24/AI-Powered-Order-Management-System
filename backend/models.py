@@ -24,6 +24,7 @@ class Order(Base):
     quantity = Column(Integer)
     deadline = Column(String)
     status = Column(String, default="Received")
+    created_by_email = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     quality_logs = relationship("QualityLog", back_populates="order")

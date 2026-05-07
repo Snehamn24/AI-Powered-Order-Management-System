@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -7,15 +7,15 @@ from typing import Optional
 # =========================
 
 class UserRegister(BaseModel):
-    name: str
-    email: str
-    password: str
-    role: str
+    name: str = Field(min_length=2, max_length=80)
+    email: str = Field(min_length=5, max_length=120)
+    password: str = Field(min_length=8, max_length=72)
+    role: str = Field(min_length=3, max_length=30)
 
 
 class UserLogin(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=5, max_length=120)
+    password: str = Field(min_length=8, max_length=72)
 
 
 # =========================

@@ -17,7 +17,7 @@ def get_db():
         db.close()
 
 
-# ================= STATUS FLOW RULES =================
+# ================= STATUS FLOW =================
 STATUS_FLOW = {
     "Received": ["In Review"],
     "In Review": ["Accepted"],
@@ -26,6 +26,16 @@ STATUS_FLOW = {
 }
 
 
+# ================= HELPER =================
+def get_latest_note(db, order_id):
+    note = db.query(QualityLog)\
+        .filter(QualityLog.order_id == order_id)\
+        .order_by(QualityLog.id.desc())\
+        .first()
+    return note.note if note else None
+
+
+# ================= MAIN CHAT =================
 @router.post("/chat")
 def chat(payload: dict, db: Session = Depends(get_db)):
 
@@ -49,10 +59,7 @@ def chat(payload: dict, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(order)
 
-        return {
-            "reply": f"Order #{order.id} created (Received)",
-            "order_id": order.id
-        }
+        return {"reply": f"Order #{order.id} created (Received)"}
 
     # ================= UPDATE STATUS =================
     elif intent == "update_status":
@@ -69,30 +76,45 @@ def chat(payload: dict, db: Session = Depends(get_db)):
 
         if new_status not in allowed:
             return {
-                "reply": f"Cannot move from {order.status} → {new_status}. Allowed: {allowed}"
+                "reply": f"Cannot move {order.status} → {new_status}"
             }
 
         order.status = new_status
         db.commit()
 
-        return {
-            "reply": f"Order #{order.id} → {order.status}"
-        }
+        return {"reply": f"Order #{order.id} → {order.status}"}
 
-    # ================= QUALITY LOG =================
+    # ================= QUALITY NOTE (FIXED WORKING) =================
     elif intent == "add_quality_note":
 
-        note = QualityLog(
-            order_id=result.get("order_id"),
+        order_id = result.get("order_id")
+
+        if not order_id:
+            return {"reply": "Invalid order ID"}
+
+        note_entry = QualityLog(
+            order_id=order_id,
             note=result.get("note"),
             timestamp=datetime.now()
         )
 
-        db.add(note)
+        db.add(note_entry)
         db.commit()
 
+        return {"reply": f"Quality note saved for Order #{order_id}"}
+
+    # ================= GET ORDER STATUS =================
+    elif intent == "get_order_status":
+
+        order_id = result.get("order_id")
+
+        order = db.query(Order).filter(Order.id == order_id).first()
+
+        if not order:
+            return {"reply": f"Order #{order_id} not found"}
+
         return {
-            "reply": f"Quality note added to Order #{result.get('order_id')}"
+            "reply": f"Order #{order.id}: {order.status} | {order.material} | Qty {order.quantity} | Latest: {get_latest_note(db, order_id)}"
         }
 
     # ================= DELETE ORDER =================
@@ -111,28 +133,6 @@ def chat(payload: dict, db: Session = Depends(get_db)):
 
         return {"reply": f"Order #{order_id} deleted successfully"}
 
-    # ================= GET ORDER STATUS =================
-    elif intent == "get_order_status":
-
-        order_id = result.get("order_id")
-
-        order = db.query(Order).filter(Order.id == order_id).first()
-
-        if not order:
-            return {"reply": f"Order #{order_id} not found"}
-
-        latest_note = db.query(QualityLog)\
-            .filter(QualityLog.order_id == order_id)\
-            .order_by(QualityLog.id.desc())\
-            .first()
-
-        reply = f"Order #{order.id}: {order.status} | {order.material} | Qty {order.quantity}"
-
-        if latest_note:
-            reply += f" | Latest: {latest_note.note}"
-
-        return {"reply": reply}
-
     # ================= FILTER ORDERS =================
     elif intent == "filter_orders":
 
@@ -146,12 +146,14 @@ def chat(payload: dict, db: Session = Depends(get_db)):
                     "id": o.id,
                     "status": o.status,
                     "material": o.material,
-                    "qty": o.quantity
-                } for o in orders
+                    "qty": o.quantity,
+                    "latest_note": get_latest_note(db, o.id)
+                }
+                for o in orders
             ]
         }
 
-    # ================= ALL ORDERS =================
+    # ================= ALL ORDERS (DASHBOARD) =================
     elif intent == "get_all_orders":
 
         orders = db.query(Order).all()
@@ -162,8 +164,10 @@ def chat(payload: dict, db: Session = Depends(get_db)):
                     "id": o.id,
                     "status": o.status,
                     "material": o.material,
-                    "qty": o.quantity
-                } for o in orders
+                    "qty": o.quantity,
+                    "latest_note": get_latest_note(db, o.id)
+                }
+                for o in orders
             ]
         }
 
